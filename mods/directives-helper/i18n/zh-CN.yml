@@ -1,0 +1,32 @@
+# Auto-generated translation template -- regenerate with `zwm lint i18n`; do not edit by hand.
+#
+# To start a new language, copy this file to `<language-code>.yml` (the code the WoT client
+# uses: `pl`, `de`, `fr`, `ru`, ...) and fill in the values. Each key's English source text is
+# in the `# en:` comment above it. Keys left empty ("") simply fall back to English in-game,
+# so partial translations are fine.
+
+# Window
+# en: "Directives Helper"
+WINDOW_TITLE: "指令助手"
+
+# Categories
+# en: "Improve perk effect"
+CATEGORY_CREW_IMPROVE: "技能指令"
+# en: "Boost perk to 100%"
+CATEGORY_CREW_GRANT: "提升技能至100%"
+# en: "Equipment"
+CATEGORY_EQUIPMENT: "装备指令"
+
+# Labels
+# en: "Auto-resupply"
+LABEL_AUTO_RESUPPLY: "自动补给"
+# en: "Your last one. Auto-resupply will buy another after the battle."
+LABEL_RESUPPLY_WARNING: "这是最后一个指令，战斗结束后自动补给将重新购买一个."
+# en: "Show unowned"
+LABEL_SHOW_UNOWNED: "显示未拥有指令"
+# en: "click to buy"
+LABEL_BUY_HINT: "点击进行购买"
+# en: "purchase not available"
+LABEL_BUY_UNAVAILABLE: "暂时无法购买"
+# en: "No directives meeting criteria"
+LABEL_SECTION_EMPTY: "没有符合条件的指令"
