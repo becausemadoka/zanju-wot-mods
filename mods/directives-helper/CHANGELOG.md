@@ -1,6 +1,10 @@
 Changelog
 =========
 
+## 1.0.5 (21 September 2026)
+
+- New Simplified Chinese translation. Thank you [@becausemadoka](https://github.com/becausemadoka)!
+
 ## 1.0.4 (2 September 2026)
 
 - Fixed the window not appearing in non-default garages.
