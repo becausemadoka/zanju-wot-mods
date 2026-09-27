@@ -2,10 +2,13 @@ from __future__ import print_function, unicode_literals
 
 import logging
 
+import BigWorld
 from CurrentVehicle import g_currentPreviewVehicle, g_currentVehicle
 from frameworks.wulf import WindowLayer
 from gui.Scaleform.framework import ScopeTemplates, ViewSettings, g_entitiesFactories
 from gui.Scaleform.framework.entities.View import View
+from gui.Scaleform.framework.managers.loaders import SFViewLoadParams
+from gui.shared.personality import ServicesLocator
 from helpers import dependency
 from skeletons.gui.shared import IItemsCache
 
@@ -17,10 +20,22 @@ _logger = logging.getLogger('zanju.researchprogressbar')
 # the bar's hover reports arrive on the bar's view, and the tooltip is a different view entirely.
 _tooltip_view = None
 
-# Whether a hover arriving with no tooltip view has been reported since the last one loaded. The
-# bar reports a hover many times over and the answer does not change between them, so one line
-# per outage says everything a second one would.
-_tooltip_miss_reported = False
+# The hover the tooltip draws as soon as it finishes loading, or None. The view loads
+# asynchronously, so the first hover of a run arrives before there is anything to draw it and has
+# to be held rather than dropped.
+_pending_tooltip_hover = None
+
+# Set while a load has been asked for and the view has not populated yet. The bar reports a hover
+# every frame, and without this a cursor resting on a marker would ask again on each one.
+_tooltip_load_requested = False
+
+# The scheduled release of the tooltip, or None.
+_tooltip_release_callback = None
+
+# How long the tooltip stays loaded after the cursor leaves the markers. Long enough that a sweep
+# across the bar does not load and destroy it several times over, short enough that a garage the
+# player is not hovering holds nothing on `TOOLTIP_LAYER`.
+TOOLTIP_RELEASE_DELAY = 1.0
 
 # Set once the display-tree report has been logged for the current view, so a diagnostic that
 # answers the same question every frame does not fill game.log.
@@ -58,21 +73,17 @@ def _remember_tooltip_context(data):
                     markers[int(key)] = marker
     except Exception:
         _logger.exception('Failed to read the context for the tooltip')
+        # Emptied, not left as it was. The bar has already been given the new context by the
+        # caller, so keeping the previous one here means the next hover resolves an index
+        # against the wrong vehicle and the tooltip states that vehicle's XP as fact. An empty
+        # map draws no tooltip at all, which is the honest failure of the two.
+        _tooltip_markers_by_index = {}
         return
     _tooltip_markers_by_index = markers
 
 
-def _show_tooltip(indices, cursor_x, cursor_y):
-    """Draw the tooltip for the markers the bar says the cursor is over, or hide it."""
-    global _tooltip_miss_reported
-    view = _tooltip_view
-    if view is None:
-        # The bar is reporting hovers and there is nothing to draw them. That is the shape of a
-        # tooltip outage, and it is silent without this line: every other path here succeeds.
-        if not _tooltip_miss_reported:
-            _tooltip_miss_reported = True
-            _logger.info('Hover reported with no tooltip view loaded; nothing can draw it')
-        return
+def _build_tooltip_entries(indices):
+    """Turn the marker names the bar reports into the rows the tooltip renderer reads."""
     entries = []
     for part in str(indices or '').split(','):
         part = part.strip()
@@ -84,17 +95,119 @@ def _show_tooltip(indices, cursor_x, cursor_y):
             continue
         if marker is None:
             continue
-        # The shape the tooltip renderer reads. Built here rather than sent from the bar,
-        # because the bar would be handing back data Python gave it in the first place.
+        # Built here rather than sent from the bar, because the bar would be handing back data
+        # Python gave it in the first place.
         entries.append({
             'marker': marker,
             'costXp': marker.get('costXp'),
             'combatXp': marker.get('tooltipCombatXp') or 0,
             'freeXp': marker.get('tooltipFreeXp') or 0,
         })
-    if not entries:
-        view.as_hideTooltipS()
+    return entries
+
+
+def _cancel_tooltip_release():
+    global _tooltip_release_callback
+
+    if _tooltip_release_callback is None:
         return
+    try:
+        BigWorld.cancelCallback(_tooltip_release_callback)
+    except Exception:
+        pass
+    _tooltip_release_callback = None
+
+
+def _release_tooltip_view():
+    """Destroy the tooltip, because the cursor has stayed away from the markers."""
+    global _tooltip_release_callback
+
+    _tooltip_release_callback = None
+    if _pending_tooltip_hover is not None:
+        return
+    _dispose_tooltip_view('hover_left', _logger)
+
+
+def _schedule_tooltip_release():
+    global _tooltip_release_callback
+
+    if _tooltip_release_callback is not None:
+        return
+    try:
+        _tooltip_release_callback = BigWorld.callback(TOOLTIP_RELEASE_DELAY, _release_tooltip_view)
+    except Exception:
+        # Better to lose the delay than to keep the view: a tooltip left loaded is the fault this
+        # lifetime exists to avoid.
+        _logger.exception('Failed to schedule the tooltip release; destroying the view now')
+        _dispose_tooltip_view('hover_left', _logger)
+
+
+def _schedule_pending_redraw(view, entries, cursor_x, cursor_y):
+    """Send a held draw again on the next tick, once the client has attached the view."""
+    def redraw():
+        if _tooltip_view is not view:
+            return
+        try:
+            view.as_showTooltipS(entries, cursor_x, cursor_y)
+        except Exception:
+            _logger.exception('Failed to redraw the tooltip after it was attached')
+
+    try:
+        BigWorld.callback(0.0, redraw)
+    except Exception:
+        _logger.exception('Failed to schedule the tooltip redraw')
+
+
+def _request_tooltip_view_load():
+    global _tooltip_load_requested
+
+    if _tooltip_load_requested:
+        return
+    app = _get_lobby_app(ServicesLocator.appLoader)
+    if app is None:
+        return
+    try:
+        app.loadView(SFViewLoadParams(TOOLTIP_VIEW_ALIAS))
+        _tooltip_load_requested = True
+    except Exception:
+        _logger.exception('Failed to request the tooltip view load')
+
+
+def _show_tooltip(indices, cursor_x, cursor_y):
+    """Draw the tooltip for the markers the bar says the cursor is over, or release it.
+
+    The view lives for the length of a hover, not the length of the garage session. It sits on
+    `TOOLTIP_LAYER`, and a window loaded there holds back the client's own reward and event queue
+    -- see docs/reference/ui-and-scaleform.md#window-layers. Keeping it for the session left the
+    "important events missed" notice inert for as long as the player stayed in the garage, and
+    clicking that notice did nothing. Measured on 2.4: a field-mods window sat queued for five
+    seconds while this view was loaded, and opened once it was gone.
+
+    So the cost of a kept view is a client fault the player cannot work around, and the cost of
+    this lifetime is one view load per hover, which the same log puts at about 50 ms.
+    """
+    global _pending_tooltip_hover
+
+    entries = _build_tooltip_entries(indices)
+
+    if not entries:
+        _pending_tooltip_hover = None
+        view = _tooltip_view
+        if view is not None:
+            view.as_hideTooltipS()
+            _schedule_tooltip_release()
+        return
+
+    _cancel_tooltip_release()
+
+    view = _tooltip_view
+    if view is None:
+        # The load is asynchronous, so the hover waits for it. `_populate` draws this.
+        _pending_tooltip_hover = (entries, cursor_x, cursor_y)
+        _request_tooltip_view_load()
+        return
+
+    _pending_tooltip_hover = None
     view.as_showTooltipS(entries, cursor_x, cursor_y)
 
 
@@ -112,12 +225,30 @@ class _ScaleformTooltipView(View):
         return None
 
     def _populate(self):
-        global _tooltip_miss_reported
+        global _pending_tooltip_hover
+        global _tooltip_load_requested
         global _tooltip_view
         super(_ScaleformTooltipView, self)._populate()
         _tooltip_view = self
-        _tooltip_miss_reported = False
+        _tooltip_load_requested = False
         _logger.info('Tooltip view populated on layer %s', TOOLTIP_LAYER)
+
+        pending = _pending_tooltip_hover
+        _pending_tooltip_hover = None
+        if pending is None:
+            # The cursor left the markers while this was loading. Nothing to draw, and a view
+            # left standing here would hold the band for the rest of the session.
+            _schedule_tooltip_release()
+            return
+        entries, cursor_x, cursor_y = pending
+        self.as_showTooltipS(entries, cursor_x, cursor_y)
+        # Sent twice on purpose. The client has not attached this view to the stage yet, and
+        # the tooltip cannot place itself before it is there, so the draw above is held on the
+        # ActionScript side and replayed once the view is attached. This second send covers an
+        # attach that arrives without that event. The cost of losing the draw is high and the
+        # cost of a duplicate is one redraw: the bar reports a hover only when the set of
+        # markers changes, so nothing sends it again until the cursor leaves and comes back.
+        _schedule_pending_redraw(self, entries, cursor_x, cursor_y)
 
     def _dispose(self):
         global _tooltip_view
@@ -132,15 +263,32 @@ class _ScaleformTooltipView(View):
 def _dispose_tooltip_view(reason, logger):
     """Destroy the tooltip view, if one is loaded. Returns True when one was destroyed.
 
-    The tooltip goes when the bar goes. The two are loaded together by
-    `_request_scaleform_view_load`, and that call asks the client for both aliases at once --
-    but the client ignores a load for a view it already holds. So a tooltip left standing
-    through a teardown of the bar is never reloaded, and the next hover has nothing to draw it.
-    The vehicle hub is the one screen that takes this path.
+    `_show_tooltip` owns the ordinary lifetime and releases the view a moment after the cursor
+    leaves the markers. This is for the paths that take the whole bar away -- the lobby exit,
+    the vehicle hub, the mod stopping -- where the view has to go whether or not the cursor is
+    resting on a marker.
+
+    A tooltip left standing through a disconnect is worse than a dead tooltip. The lobby exit
+    that follows a disconnect does not dispose the view on its own, so the tooltip outlives the
+    lobby that loaded it. The client disposes it during the NEXT lobby teardown, against a movie
+    that is already gone, and it crashes there with an access violation.
     """
+    global _pending_tooltip_hover
+    global _tooltip_load_requested
+    global _tooltip_view
+
+    _cancel_tooltip_release()
+    _pending_tooltip_hover = None
+    _tooltip_load_requested = False
+
     view = _tooltip_view
     if view is None:
         return False
+
+    # Cleared before the destroy, not after. `_dispose` clears it on the normal path, but a
+    # destroy that raises leaves the global pointed at a dead view, and the next hover then
+    # calls into it.
+    _tooltip_view = None
 
     try:
         view.destroy()
@@ -236,7 +384,14 @@ class _ScaleformGarageView(View):
     def _dispose(self):
         # A new view gets a fresh report: it may be attached somewhere else.
         global _display_tree_reported
+        global _tooltip_markers_by_index
         _display_tree_reported = False
+        # The marker map came from this view's own context, so it goes when this view goes.
+        #
+        # Here and not in `_dispose_tooltip_view`. The tooltip is released between hovers of the
+        # same vehicle now, and it has to find these markers again on the next hover -- clearing
+        # them there would leave every hover after the first with nothing to draw.
+        _tooltip_markers_by_index = {}
         if callable(_on_scaleform_view_disposed):
             _on_scaleform_view_disposed(self)
         super(_ScaleformGarageView, self)._dispose()
@@ -516,6 +671,17 @@ VIEW_LAYER = WindowLayer.WINDOW
 # client's dialogs live, so the tooltip ties with those on activation -- acceptable for something
 # only up while the cursor rests on a marker. `OVERLAY` (11) would sit above the lobby menu and
 # is reported upstream to stop the second Escape press from closing it.
+#
+# `SYSTEM_MESSAGE` (9) WAS TRIED AND DOES NOT WORK. On paper it is the better band: it is the one
+# gap in the list `__overlappingWindowsPredicate` reads, so a view kept there cannot hold back the
+# client's reward and event queue. In game on 2.4 the bar did not appear at all. A Scaleform view
+# needs a container on its band, and the lobby app has none on band 9 -- across a two-day log,
+# `SFWindow` appeared on bands 3, 4, 5, 6, 7, 10 and 16, and never on 8, 9 or 11. An empty band is
+# not a free one. See docs/reference/ui-and-scaleform.md#window-layers.
+#
+# So this view stays on band 10 and stays in the blocking list. Measured over that same log the
+# queue ran through it anyway, 13 reward and event windows while the tooltip was loaded, and why
+# is unknown. That is not a comfortable place to be, but band 9 is not an alternative.
 TOOLTIP_LAYER = WindowLayer.TOP_WINDOW
 
 
@@ -547,7 +713,13 @@ def _register_scaleform_view_settings(current_registered, view_alias, view_class
             ScopeTemplates.GLOBAL_SCOPE,
         )
     )
-    _register_tooltip_view_settings()
+    # The bar has to survive a tooltip that cannot be registered. Both go through this one call,
+    # and an exception here used to escape to `_start_scaleform_view_runtime`, which then never
+    # attached its space hooks -- so a fault in the tooltip took the bar off the screen entirely.
+    try:
+        _register_tooltip_view_settings()
+    except Exception:
+        _logger.exception('Failed to register the tooltip view; the bar runs without it')
     return True
 
 

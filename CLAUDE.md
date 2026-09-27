@@ -9,3 +9,7 @@ Use strict mode for procedures, install steps, and error messages. Use STE-flavo
 ## Markdown line wrapping
 
 Write each paragraph, list item, and table row as a single long line. Never wrap text at a fixed column. The only correct hard break is two trailing spaces or a `<br>` tag.
+
+## Game directory
+
+The Dev Container mounts the host WoT install at `/game`. The host path comes from `WOT_GAME_DIR` in `.env`. Windows paths do not work in the container. Thus, change the install-directory prefix to `/game`: `C:\Games\World_of_Tanks_EU\game.log` becomes `/game/game.log`.

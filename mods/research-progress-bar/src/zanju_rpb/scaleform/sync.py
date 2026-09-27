@@ -79,6 +79,10 @@ def _stop_scaleform_view(mod, logger):
     mod._last_seen_sub_view_alias = None
     mod._cancel_visibility_probe()
 
+    # `_stop_scaleform_view_runtime` destroys the bar, but it never receives the tooltip, so
+    # the tooltip needs its own line here.
+    _dispose_tooltip_view('mod_stop', logger)
+
     (
         mod._scaleform_container_manager,
         mod._scaleform_view,
@@ -178,9 +182,9 @@ def _sync_scaleform_view(mod, reason, logger, incoming_view=None):
             mod._scaleform_view_visible = None
             mod._scaleform_view_requested = False
             _dispose_scaleform_view(view, 'blocked:{0}'.format(reason), logger)
-            # The tooltip goes with it. Leaving it standing does not keep it working: the pair
-            # is only ever reloaded together, and the reload skips a view the client still
-            # holds, so the tooltip would survive the teardown and then never be rebuilt.
+            # The tooltip goes with it. Nothing reports a hover once the bar is gone, so the
+            # release that normally follows the cursor would never run, and the view would hold
+            # its band for the rest of the session.
             _dispose_tooltip_view('blocked:{0}'.format(reason), logger)
         else:
             mod._scaleform_view_visible = _hide_scaleform_view(
@@ -220,6 +224,11 @@ def _handle_gui_space_left(mod, space_id, logger):
     mod._scaleform_view = None
     mod._scaleform_view_visible = None
     _dispose_scaleform_view(view, 'lobby_exit', logger)
+    # The tooltip goes with the bar here too. A normal lobby exit destroys the app a moment
+    # later, and that disposes the tooltip, so this line looks redundant. It is not: a
+    # disconnect leaves the lobby without destroying the app. The tooltip then outlives the
+    # lobby that loaded it, and it crashes the client during the next teardown.
+    _dispose_tooltip_view('lobby_exit', logger)
 
 
 def _handle_scaleform_view_populated(mod, view, logger):

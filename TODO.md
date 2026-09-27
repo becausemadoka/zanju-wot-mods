@@ -1,6 +1,6 @@
 # TODO
 
-Follow-up backlog after the initial Python format-and-lint tooling rollout.
+Open work only. When an item is finished, delete it from here and put whatever is worth keeping in [the technical reference](docs/reference/README.md) — the backlog is not a changelog, and a finished item left in it reads as a thing still to do.
 
 ## Format-And-Lint Follow-Up
 
@@ -35,18 +35,6 @@ Move `view_claim.py` first. Its copies are already identical, so it needs no gen
 - Accepted consequences: IDE shows unresolved `.localization` imports in callers (cosmetic; flake8 does not resolve imports — verified green); `game.log` tracebacks cite `mods/<pkg>/localization.py`, a path with no matching file under `src/`; one-time modify/delete merge conflicts with any branch still carrying a copy (resolve by taking the delete); future per-mod divergence requires parameterizing the shared file or an explicit opt-out (defer until needed).
 - Verified non-issues: nothing outside the game imports the mod packages (no py3 probes/tests reach into `src/`); deploy ships the built `.wotmod`, untouched.
 
-## Campaign Tracker: Hover Card On Its Own Window Band (done)
-
-Shipped in 1.1.0. The banners stay injected in `mono/hangar/main`, because only an injected widget can measure the element they sit beside. The card moved into a standalone Gameface view in a window the mod owns, on `WindowLayer.TOP_WINDOW` (10), which draws over the platoon window at all times. `card_window.py` holds it, and its docstring carries the reasoning.
-
-This entry used to be the plan for that work. It is cut back to the outcome, because it told a reader to build the window behind a bounded retry and a generation token. That was the right shape while the window was built once at hangar time. It is the wrong shape now, and following it would undo the notification fix below.
-
-Three behaviours were accepted rather than solved, and none has drawn a complaint:
-
-- The card is a hit-test rectangle while it is open, so it blocks clicks and drag-to-rotate over its own area, exactly as a native window does.
-- The pointer cannot move onto the card. It is a separate native surface, so the banner loses `:hover` as the pointer leaves. The card is informational, which is what makes that fine.
-- A card on band 10 covers system messages on band 9 and ties with the native menus on activation.
-
 ## Campaign Tracker: Input And Notification Report (open)
 
 A player reported two faults on 1.1.1 over Discord, on 10 September 2026. They named `campaign-tracker` after they disabled every other mod one at a time. No GitHub issue carries this yet. Ask them to open one before it goes cold. Nothing ties the two faults to one cause, so treat them apart.
@@ -75,40 +63,6 @@ Our side is clear. A grep over all five mods for `AccountSettings`, dossier, ach
 
 **If the candidate list is ever changed, keep the headroom in mind.** `directives-helper` lists it first and `campaign-tracker` lists it last. The preference decides nothing, because the client's build order does. Take `MainMenuModel` off `campaign-tracker` and two candidates remain. Any third mod that injects into the hangar can then leave the banners with no view. The player sees no reason for it. Take it off both and two sub-views serve two mods with no spare. Find more injectable sub-views in `mono/hangar/main` before trading any of them away.
 
-## Campaign Tracker: Hover Card Built Per Hover (done)
-
-A player on 1.1.1 reported that the game's own reward and event windows never opened. The bottom-right "you missed events" notice kept returning, and its button did nothing. [Window Layers](docs/reference/ui-and-scaleform.md#window-layers) has the cause and the rule to obey. A loaded window on band 8, 10 or 11 blocks the client's notification queue. Hiding a window leaves it loaded. The card window sat on band 10 for the whole garage session.
-
-`card_window.py` now builds the window on hover and destroys it on leave. **Tested in game on 11 September 2026.** Each of the three costs of that lifetime was looked for, and none showed. The first hover of a session draws its card. A hover is no slower to answer. Moving between two banners does not flicker.
-
-Do not go back to keeping the window. The module docstring says so as well, because the next reader of that file is the person most likely to undo this.
-
-Band 9 stays untried, and stays the fallback. `SYSTEM_MESSAGE` is the gap in the blocking list, and a window there still draws over the platoon window on band 7. It would allow keeping the card. The cost is that the card would sit under the lobby menu and the dialogs on band 10.
-
-## Research Progress Bar: Does Its Tooltip Block Notifications Too? (open)
-
-`hooks.py` sets `TOOLTIP_LAYER = WindowLayer.TOP_WINDOW` for the Scaleform tooltip view. Loaded windows on that band stop the client opening its own reward and event windows. That is the fault `campaign-tracker` was reported for and fixed. See [Window Layers](docs/reference/ui-and-scaleform.md#window-layers).
-
-Two questions, and neither is answered. Does a Scaleform view registered on that band show up as a window the client's predicate can see? Is that view kept for the session, or built and destroyed per use? The player who reported the fault did not have this mod installed, so that report settles neither.
-
-The first test needs no code. Run the mod, open the garage, and check whether a queued reward window opens. If it does not, read `windowsManager.findWindows` for bands 8, 10 and 11.
-
-## Campaign Tracker: Back Button To The Campaign Map (done)
-
-Shipping in 1.2.0. `mods/campaign-tracker/src/zanju_ct/back_navigation.py` records the states the client's own path records. It does so right after a banner click opens a campaign screen. The reasoning behind every line of it is in [The Lobby Back Stack](docs/reference/ui-and-scaleform.md#the-lobby-back-stack).
-
-**Tested in game on 10 September 2026.** It works in both campaign styles. The first build recorded the campaign map alone, and one press then skipped a screen in campaign 3. The `game.log` of the natural path settled it. A back press out of a line list navigates to `subScope/subLayer/personalMissions3Entry/personalMissions3` first. A second press reaches `subScope/subLayer/campaignSelector`. The mod records both.
-
-Nothing here is open. What follows is what a later client version can break, and how to see it.
-
-**Watch `game.log` for `Recorded the way back from`.** One line per click, naming each state it wrote. A warning about the back stack instead means the client renamed a private name. The button is then off and nothing else breaks, which is the failure this was built for.
-
-**Escape reads the same stack.** It walks the same path, so the garage costs a press per step recorded. That is the client's own cost on its own path, and the changelog says so.
-
-**A refused click writes nothing.** Both client dispatchers refuse a navigation quietly. `_steps_back` therefore reads where the player actually landed before it writes anything. Without that, a refused click leaves the garage carrying a back button to the campaign map. Re-check this after a client update, because it rests on two route names.
-
-**Not covered.** The mod records the path the client's own route records, and nothing beyond it. A player can walk deeper into the client's own screens from there. The client's own stack takes over at that point.
-
 ## Testing Backlog
 
 Scaffolding is in place (`zwm test`, `testing/`, see [Testing](docs/testing.md)). `premium-time`
@@ -133,7 +87,6 @@ and `directives-helper` are covered; `research-progress-bar` has one suite so fa
 ## Release And Distribution Backlog
 
 - Add a `research-progress-bar` release checklist for wgmods.net and modpack submission: standalone companion bundle contents, config/i18n copy requirements, no-optional-UI-API smoke test, and re-test expectations for each WoT version even when no code change is planned.
-- Resolved: `meta.xml` stays in releases, trimmed to the spec fields `id`/`version`/`name`/`description`. The Wargaming *Mod Packages* spec marks it optional (only `res/` is required) but `id`/`version` give clean load-order and same-id version de-dup, so keeping it is worthwhile. It is now the single source of truth for those values (build generates the runtime `_mod_meta` and all scripts read it via `tools/mod_meta.py`).
 
 ## Localization / Font Coverage
 
@@ -210,9 +163,6 @@ Our earlier band log named `GUIFlash`, `xfw_injector`, `ModsListButton`, `Tomato
 ## Research Progress Bar Guardrails
 
 - Garage layering, settled for now. The bar sits on `WindowLayer.WINDOW` (7). Every band below it charges something, and [Window Layers](docs/reference/ui-and-scaleform.md#window-layers) records the price of each. The bar therefore draws over the Gameface garage document, and over every mod widget inside it. To lower it further needs a Gameface rewrite. Read the section above first.
-  - Done: the tooltip is a second Scaleform view, on `TOP_WINDOW` (10). It draws over the platoon window. `ui/ResearchProgressBarTooltipLobby.as` hosts it. It renders with the same `ResearchProgressBarTooltipContent` the bar used. The bar reports the markers under the cursor, Python resolves them to entries, and the second view draws them. A band applies to a whole view, so only a second view could give the tooltip a band of its own.
-  - The tooltip follows the cursor from inside its own SWF, on `ENTER_FRAME`, and Python hears about a hover only when the set of markers under the cursor changes. Keep that split. A send for every mouse move crosses into Python and redraws every section of the tooltip to move it a few pixels.
-  - Each mod keeps its own tooltip view rather than one shared view. Two mods that ship on their own schedules would need a version contract to share one. Every combination of installed mods has to work.
 - Evaluate whether tank research totals should include the cost of prerequisite modules before a tank unlock.
 - Check which upgrade is actually reachable right now and list all currently missing upgrades.
 - Turn `research-progress-bar` `configVersion` into a real migration hook: add versioned forward migrations, defaults for new keys, and pruning for renamed/removed keys instead of only carrying `configVersion = 1` forward on save.
@@ -221,6 +171,7 @@ Our earlier band log named `GUIFlash`, `xfw_injector`, `ModsListButton`, `Tomato
 - Out of scope unless explicitly requested: removing the production garage visibility-probe behavior.
 - Future AS3 naming/package cleanup: build a second fake test mod and use it to collision-test default-package class names, helper names, and source/output path overlap before renaming `ResearchProgressBar*.as` files or introducing an AS3 package tree; the earlier unique-path finding justifies this test method, but file-path collisions and class-name collisions need to be validated separately.
 - Future refactor guardrail: treat reflective prestige/elite adapter helpers in `zanju_rpb.main` as load-bearing runtime-contract code, not obvious dead code; before deleting or simplifying them, validate in-game across elite non-tier XI vehicles, tier XI vehicles, `eliteMode=customization_only`, and repeated vehicle switches.
+
 ## Research Progress Bar: Where The Bar Is Allowed To Show
 
 Checked at client 2.4.0.0. Nothing changed yet. The bar has **no battle-mode condition**. Every rule it has asks where the player stands in the lobby. The Onslaught hide then falls out of one of those rules by accident, not by intent.
