@@ -1,7 +1,7 @@
 Changelog
 =========
 
-## 1.4.4 (27 September 2026)
+## 1.4.4 (29 September 2026)
 
 - Fixed a client crash at the start of a battle. It followed a disconnect and reconnect earlier in the same session.
 - Fixed the game's reward and event windows never opening. The notice about missed events kept coming back, and its button did nothing.
