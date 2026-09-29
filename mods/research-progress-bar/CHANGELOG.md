@@ -1,6 +1,13 @@
 Changelog
 =========
 
+## 1.4.4 (29 September 2026)
+
+- Fixed a client crash at the start of a battle. It followed a disconnect and reconnect earlier in the same session.
+- Fixed the game's reward and event windows never opening. The notice about missed events kept coming back, and its button did nothing.
+- The download now ships Aslain's Mod Menu 2.0.17, in place of 2.0.11.
+- Updated for World of Tanks 2.4.0.1.
+
 ## 1.4.3 (11 September 2026)
 
 - The download now ships Aslain's Mod Menu 2.0.11, in place of 2.0.3.

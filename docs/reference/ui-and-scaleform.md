@@ -97,7 +97,32 @@ While anything matches it, `__processNextCallback` refuses to run the next queue
 
 Read `windowStatus`, not visibility. `Window.hide` changes the showing status. It leaves `windowStatus` at `LOADED`, so a window hidden between uses blocks notifications for as long as it is kept. A mod window on one of these bands has to be destroyed when nothing wants it. `campaign-tracker` had this reported on 1.1.1. It now builds its hover card per hover and destroys it on leave.
 
-Band 9, `SYSTEM_MESSAGE`, is the gap in that list. A window there draws over the platoon window on band 7 and blocks no notification. That makes it the band to reach for when a view has to be kept.
+**The rule applies to a Scaleform view too.** A view loaded with `app.loadView(SFViewLoadParams(alias))` reaches the same windows system as a native window. The client wraps it, and the wrapper carries the band the view was registered on:
+
+```
+Loading window: SFWindow(uniqueID=18, layer=10, decorator=None, content=None, viewKey=ViewKey[alias=ResearchProgressBarTooltip, name=ResearchProgressBarTooltip])
+```
+
+`research-progress-bar` kept its tooltip view on band 10 for the whole garage session, and that was the same fault `campaign-tracker` was reported for. It was measured directly on 2.4, in one tight sequence:
+
+```
+15:09:22.056  the vehicle becomes elite — the field-mods event is queued here
+              ... 5 seconds, band 10 held by the tooltip, the notice inert ...
+15:09:27.256  Disposed tooltip view (blocked:update_precheck)
+15:09:31.192  Loading window: EliteWindow(uniqueID=316, layer=8, content=EliteView)
+```
+
+The queued window opened once the band was clear, and not before. The mod now loads its tooltip per hover and releases it a second after the cursor leaves the markers, so the band is clear whenever the player is not actively hovering.
+
+**Counting reward windows against a loaded window is not a test of this.** An earlier pass over a longer log found 13 of 22 reward and event windows opening while the tooltip was loaded and wrongly read that as evidence of no blocking. Most of those were opened directly — post-battle flow, and dialogs the player clicked — and the predicate gates only the notification queue. A window on band 8 or 10 in the log is not automatically a window the queue released. Test the queue, not the band.
+
+Band 9, `SYSTEM_MESSAGE`, is the gap in that list. A window there draws over the platoon window on band 7 and blocks no notification. That makes it the band to reach for when a view has to be kept — **but not for a Scaleform view.** See the next section. It stays untried and stays the fallback for a Gameface window that cannot be built per use: the cost is that band 10 draws over it, which puts the lobby menu and the client's dialogs above it.
+
+**A Scaleform view needs a container on its band, and only some bands have one.** This is separate from the blocking rule and it overrides it, because a view on a band with no container never appears. Over a two-day log, `SFWindow` was seen on bands 3, 4, 5, 6, 7, 10 and 16, and on no other. Bands 8, 9 and 11 carried Gameface and wulf windows only.
+
+`research-progress-bar` tried to move its tooltip to band 9 on the strength of the blocking rule, and it was the wrong move. On 2.4 the whole bar stopped appearing, not just the tooltip: the view registration and the view load both run in the same call as the bar's, so the tooltip's failure reached the bar. The tooltip stays on band 10, and the mod now isolates the tooltip's registration and its load so that a repeat costs the hover text alone.
+
+**An empty band is not a free band.** Band 9 held nothing at all in that log, which reads as "nothing ties with a view there" and in fact meant "no Scaleform view can go there". Before choosing a band for a Scaleform view, check that the log has seen an `SFWindow` on it. Registering on an unseen band is a guess, and the failure is silent on the view and loud on everything registered beside it.
 
 **A mod view belongs on `WINDOW` or above.** `VIEW` and `SUB_VIEW` belong to the client. A mod view on `VIEW` takes the place of the lobby view. That lobby view owns the container the garage document needs, so the garage container never appears and the client shows an empty garage:
 
@@ -212,6 +237,30 @@ hide and show, which is cheaper and stable.
 The general rule that a view instance must never be permanent module state is upstream, in
 [gui-frameworks](https://modding.wot-tools.dev/gui-frameworks.html).
 
+### Building A View Per Use
+
+A window on a band that blocks notifications cannot be kept. It has to be built when it is needed and destroyed when it is not. `campaign-tracker` builds its hover card on hover and destroys it on leave. `research-progress-bar` does the same with its marker tooltip. Both sit on band 10, and either one kept for the garage session holds the client's reward and event queue for that whole time.
+
+For a Gameface window this is straightforward, because the build finishes inside the hover handler. For a Scaleform view it is not: `app.loadView` returns before the view exists, and that gap has two traps.
+
+**The view is not on the stage when `_populate` runs.** Anything that needs the stage is meaningless until the client attaches the view. `globalToLocal` gives nothing usable and `stage.stageWidth` cannot be read at all, so a tooltip placed there lands off the screen rather than under the cursor. Hold the draw and replay it from `ADDED_TO_STAGE` — and replay it from `configUI` too, because a draw can arrive before that has run either.
+
+**A trigger that fires only on change does not send again.** `research-progress-bar` splits the work: the tooltip follows the cursor from inside its own SWF on `ENTER_FRAME`, and Python hears about a hover only when the set of markers under the cursor changes. Keep that split — a send for every mouse move crosses into Python and redraws every section of the tooltip to move it a few pixels. It also means a draw lost to the trap above is never repeated: the tooltip stays blank until the cursor leaves the marker and comes back. A per-use view needs one of two properties, a trigger that repeats or a held draw that replays.
+
+A band applies to a whole view, so a second view is the only way to put one part of an overlay on a band of its own. That is why the bar's tooltip is a separate SWF rather than a child of the bar. It renders with the same content renderer the bar used: the bar reports which markers the cursor is over, Python resolves those to entries, and the second view draws them.
+
+**A companion view must not be able to take the main view with it.** The bar and its tooltip were registered in one call and loaded in one `try`, so a tooltip that could not load left the bar with no space hooks and nothing on screen at all. Give each its own failure path. A tooltip that fails costs the hover text. A bar that fails costs the mod.
+
+Three things to check in game after moving a view to this lifetime. All three were clean for both mods:
+
+- the first use of a session draws;
+- the use is no slower to answer;
+- moving between two neighbouring triggers does not flicker.
+
+**A standalone window cannot be pointed at.** It is a separate native surface, so the element that opened it loses `:hover` as the pointer leaves, and the pointer cannot move onto the window's own content. That suits something informational and rules out anything the player has to click. For what such a window costs in hit-testing, see [Choosing A UI Approach](choosing-a-ui-approach.md).
+
+**Each mod owns its own overlay view rather than sharing one.** Mods here ship on their own schedules and every combination of them installed has to work, so a shared view would need a version contract between releases. Two views on one band cost nothing that one would not.
+
 For deciding *when* a garage overlay belongs on screen, read the lobby's visible route rather than
 a container alias. See `route_gate.py` in `directives-helper` and the route table in
 [Directives And Battle Boosters](directives-and-battle-boosters.md#when-the-window-shows).
@@ -237,6 +286,10 @@ That is what costs a garage banner its back button. It costs the game's own bann
 **Escape reads this stack too.** An entry changes what Escape does as much as what the button does. Both walk the recorded path first. That puts the garage one press further away for each entry written, and the client's own path costs the same.
 
 **Know what prunes the stack before you trust an entry to stay.** `clearCycles` drops a repeat of the state it enters. `_ViewKillingObserver` and `_RecordedStates.__onWindowStatusChanged` drop entries whose view died. Back navigation pops. At 2.4.0.0 only crew states register a removable-state selector, so that window path reaches nothing else.
+
+**A refused navigation writes nothing, and it refuses quietly.** Both client dispatchers drop a navigation they will not take, without raising and without a log line. So read where the player actually landed before writing any entry. Without that, a click the client refused leaves the garage carrying a back button to a screen the player never opened. `_steps_back` in `back_navigation.py` does this, and it rests on two route names — recheck it after a client update.
+
+**One log line is the whole health check.** `campaign-tracker` writes `Recorded the way back from` once per click, naming each state it wrote. A warning about the back stack instead means a private name changed upstream. The button is then off and nothing else breaks, which is what the guards are for.
 
 `_RecordedStates` and `__updateVisibleRoute` are both private and name-mangled, so guard every call. A rename upstream then costs the button and nothing else. `back_navigation.py` in `campaign-tracker` is the worked example. [Personal Missions](personal-missions.md#pausing-resetting-and-opening) names the states it writes.
 

@@ -36,6 +36,13 @@ package {
         private var lastCursorX:Number = NaN;
         private var lastCursorY:Number = NaN;
 
+        // A draw that arrived before this view could place it, or null. Python loads this view
+        // on the hover that needs it, so the first draw of a run races the client attaching the
+        // view to the stage. See replayPendingDraw.
+        private var pendingEntries:Array = null;
+        private var pendingStageX:Number = NaN;
+        private var pendingStageY:Number = NaN;
+
         public function ResearchProgressBarTooltipLobby() {
             super();
         }
@@ -64,10 +71,19 @@ package {
 
             removeEventListener(Event.ENTER_FRAME, onEnterFrame);
             addEventListener(Event.ENTER_FRAME, onEnterFrame, false, 0, true);
+
+            removeEventListener(Event.ADDED_TO_STAGE, onAddedToStage);
+            addEventListener(Event.ADDED_TO_STAGE, onAddedToStage, false, 0, true);
+
+            // A draw can reach this view before this method runs. Nothing else would send it
+            // again, so it is replayed here.
+            replayPendingDraw();
         }
 
         override protected function onDispose():void {
+            removeEventListener(Event.ADDED_TO_STAGE, onAddedToStage);
             removeEventListener(Event.ENTER_FRAME, onEnterFrame);
+            clearPendingDraw();
             if (tooltipContainer != null) {
                 ResearchProgressBarTooltipView.hideTooltip(tooltipContainer);
                 if (tooltipContainer.parent == this) {
@@ -96,11 +112,20 @@ package {
             var localPoint:Point;
             var localExtent:Point;
 
-            if (tooltipContainer == null || entries == null || entries.length == 0) {
+            if (entries == null || entries.length == 0) {
                 as_hideTooltip();
                 return;
             }
 
+            if (tooltipContainer == null || stage == null) {
+                // Too early to place anything. Hold it. See replayPendingDraw.
+                pendingEntries = entries;
+                pendingStageX = stageX;
+                pendingStageY = stageY;
+                return;
+            }
+
+            clearPendingDraw();
             localPoint = globalToLocal(new Point(stageX, stageY));
             localExtent = stageExtent();
 
@@ -122,9 +147,45 @@ package {
         }
 
         public function as_hideTooltip():void {
+            clearPendingDraw();
             if (tooltipContainer != null) {
                 ResearchProgressBarTooltipView.hideTooltip(tooltipContainer);
             }
+        }
+
+        private function onAddedToStage(event:Event):void {
+            replayPendingDraw();
+        }
+
+        private function clearPendingDraw():void {
+            pendingEntries = null;
+            pendingStageX = NaN;
+            pendingStageY = NaN;
+        }
+
+        /**
+         * Draw the request that arrived before this view could place it.
+         *
+         * Python loads this view on the hover that needs it, rather than keeping it for the
+         * garage session -- a view kept on this band holds back the client's own reward and
+         * event windows. The cost of that is a race: the first draw of a run can arrive before
+         * `configUI` has run or before the client has attached the view, and both
+         * `globalToLocal` and `stage.stageWidth` are meaningless until then.
+         *
+         * A draw lost there is not sent again. The bar reports a hover only when the set of
+         * markers under the cursor changes, so the tooltip stays blank until the cursor leaves
+         * the marker and comes back. That is what this replay prevents.
+         */
+        private function replayPendingDraw():void {
+            var entries:Array = pendingEntries;
+            var stageX:Number = pendingStageX;
+            var stageY:Number = pendingStageY;
+
+            if (entries == null || tooltipContainer == null || stage == null) {
+                return;
+            }
+            clearPendingDraw();
+            as_showTooltip(entries, stageX, stageY);
         }
 
         /**

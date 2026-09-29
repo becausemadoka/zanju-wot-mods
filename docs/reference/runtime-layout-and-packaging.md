@@ -134,3 +134,5 @@ inside the mod so it reaches `game.log`. See [Debugging](../debugging.md).
 
 Build results go to `dist/`.
 That output is intended to be disposable build output rather than authored source.
+
+**`meta.xml` ships, trimmed to `id`, `version`, `name` and `description`.** The Wargaming *Mod Packages* spec marks the file optional and requires only `res/`, so this is a choice rather than a rule. `id` and `version` buy a clean load order and let the client de-duplicate two versions of the same mod, which is worth the few bytes. It is also the single source of truth for those values in this repository: the build generates the runtime `_mod_meta` from it, and every script reads it through `tools/mod_meta.py`.
