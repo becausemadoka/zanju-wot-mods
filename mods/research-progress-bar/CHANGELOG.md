@@ -1,6 +1,10 @@
 Changelog
 =========
 
+## 1.4.5 (30 September 2026)
+
+- New Simplified Chinese translation. Thank you [@becausemadoka](https://github.com/becausemadoka)!
+
 ## 1.4.4 (29 September 2026)
 
 - Fixed a client crash at the start of a battle. It followed a disconnect and reconnect earlier in the same session.
