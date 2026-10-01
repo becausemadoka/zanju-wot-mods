@@ -1,9 +1,10 @@
 Changelog
 =========
 
-## 1.2.1 (30 September 2026)
+## 1.2.1 (1 October 2026)
 
 - Fixed missing letters in the banner tooltips, in languages that the game draws with a different font (e.g. Chinese).
+- Updated for World of Tanks 2.4.0.2.
 
 ## 1.2.0 (11 September 2026)
 
