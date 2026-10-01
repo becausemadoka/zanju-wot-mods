@@ -12,9 +12,11 @@ from ..core.env import load_env, subprocess_env
 from ..core.i18n_audit import (
     audit_code_key_coverage,
     check_readme_coverage,
+    check_root_readme_coverage,
     check_templates,
     compute_translation_coverage,
     write_readme_coverage,
+    write_root_readme_coverage,
     write_templates,
 )
 from ..core.paths import REPO_ROOT
@@ -360,7 +362,7 @@ def run_i18n_check(verbose=False):
     # A language being incomplete never fails the build (translations are community-maintained),
     # but the generated files must be committed up to date -- a stale or missing README coverage
     # section or i18n template IS a failure. Contributors run `zwm lint i18n` and commit the result.
-    problems = check_readme_coverage() + check_templates()
+    problems = check_readme_coverage() + check_root_readme_coverage() + check_templates()
     if problems:
         message = ["Generated localization files are out of date or missing:"]
         message.extend("  - {0}".format(problem) for problem in problems)
@@ -380,6 +382,11 @@ def run_i18n_write(verbose=False):
         success("Refreshed translation coverage in README for: {0}".format(", ".join(updated)))
     else:
         success("Translation coverage READMEs already up to date")
+
+    if write_root_readme_coverage():
+        success("Refreshed translation coverage in the main README")
+    else:
+        success("Translation coverage in the main README already up to date")
 
     updated_templates = write_templates()
     if updated_templates:
@@ -407,7 +414,7 @@ def parse_args(argv):
             "  py27-lint                     Run flake8 compatibility checks on Python 2.7 targets.\n"
             "  py27-format                   Run autopep8 on Python 2.7 targets.\n"
             "  py27-format-check            Alias for: py27-format --check\n"
-            "  i18n                          Regenerate each mod's README coverage table and i18n template.\n"
+            "  i18n                          Regenerate the README coverage tables and each mod's i18n template.\n"
             "  i18n-check                    Verify key coverage and that generated i18n files are current.\n"
             "\n"
             "Examples:\n"

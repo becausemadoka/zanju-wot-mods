@@ -48,7 +48,11 @@ body {
 
 /* The game switches family for the scripts PFDINMax has no glyphs for, and drops the letter
  * spacing with it. Mirrored rather than reasoned about: the card renders the client's own
- * mission names, so it meets every language the client ships. */
+ * mission names, so it meets every language the client ships.
+ *
+ * Nothing in this document sets `lang` by itself. The client's documents set it in startup code
+ * that this document does not run, so `applyLanguage` in card_panel.js sets it from the code
+ * Python sends. Without it, none of these rules match. */
 html[lang=ja] body,
 html[lang=ko] body,
 html[lang=zh_tw] body,

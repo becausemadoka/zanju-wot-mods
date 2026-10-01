@@ -305,6 +305,7 @@ def show(branch, rect, entry, labels, held, logger):
         # Painted only once the window has been moved. Until then the window is on screen and
         # empty, which is what lets the card's own frames run at all.
         'reveal': False,
+        'lang': _client_language(),
     }
 
     existed = is_alive()
@@ -324,6 +325,22 @@ def show(branch, rect, entry, labels, held, logger):
         # already holds this payload, so pushing it again would be a wasted round trip.
         _push(payload, logger)
     _show_window(logger)
+
+
+def _client_language():
+    """The language code that the client's own documents put on `<html lang>`, or ''.
+
+    The card needs it to select its font. PFDINMax has no glyphs for Chinese, Japanese, Korean,
+    Thai or Vietnamese. card.css switches to Warhelios for those languages with `html[lang=...]`.
+    Each client document sets that attribute from `R.strings.settings.LANGUAGE_CODE()` when it
+    starts, in code that a mod's own document does not run. `getClientLanguage` reads the same
+    string. Without it, the card on the Chinese client showed only digits and Latin letters.
+    """
+    try:
+        from helpers import getClientLanguage
+        return getClientLanguage() or ''
+    except Exception:
+        return ''
 
 
 def _show_window(logger):

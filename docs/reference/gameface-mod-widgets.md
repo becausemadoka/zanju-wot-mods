@@ -242,6 +242,22 @@ body {
 
 It also switches to `Warhelios` with `letter-spacing: 0` for `html[lang]` of `ja`, `ko`, `zh_tw`, `zh_sg`, `zh_cn`, `vi` and `th`, which a document rendering the client's own strings should mirror.
 
+**Mirroring the rule is not enough, because a standalone document has no `lang`.** The client's markup says `<html lang="en">`. Its startup code then calls `document.documentElement.setAttribute("lang", resources.resolve("langCode"))`, where `langCode` is `R.strings.settings.LANGUAGE_CODE()`. A document that the mod owns does not run that code, so no `html[lang=...]` rule matches, and PFDINMax stays in use. PFDINMax has no CJK glyphs. On the Chinese client, the `campaign-tracker` card thus showed only digits and Latin letters ([issue #31](https://github.com/przemyslaw-zan/zanju-wot-mods/issues/31)).
+
+Set the attribute yourself before the first render. `helpers.getClientLanguage()` in Python reads the same `#settings:LANGUAGE_CODE` string. `campaign-tracker` sends it in the card payload, and `applyLanguage` in `card_panel.js` sets it. An injected widget does not need this, because it lives in a client document that already carries `lang`.
+
+**The client's region, not the family name, decides which glyphs you get.** Gameface draws only with the fonts that `res/gui/flash/fontconfig.xml` lists, never with the fonts of the operating system. The engine reads the `gameface` section of this file in `gf_fonts.cpp`. Each `fontfamily` maps a `name` to one `path` per `style` and `weight`, and `deffontfamily` names the default family. The engine also knows `fontfamilyfallback`, `hieroglyphical` and `sdfsize`, but the EU file uses none of them. The file is loose, not in a package, and it is packed BigWorld XML.
+
+On EU 2.4.0.1, `Warhelios` maps to `Warhelios-Regular.ttf` and `Warhelios-Bold.ttf`, which have no CJK glyphs. But the GUI packages in every region ship `WarheliosZHCN`, `WarheliosZHTW`, `WarheliosJA` and `WarheliosKO`, each a separate family by its internal name. The Chinese client thus maps `Warhelios` to CJK glyphs, probably to the `WarheliosZHCN` files. Nobody read its `fontconfig.xml`, but the client showed the result. The garage banner in issue #31 drew "先锋-2" through the `html[lang=zh_cn]` rule. On 1 October 2026, the reporter also confirmed the `campaign-tracker` 1.2.1 card on that client, with Chinese text in every line from the client. As a result, a client in another language cannot show CJK text, even with `lang` set correctly.
+
+To test CJK text on a client in another language, do these steps. The procedure worked on EU 2.4.0.1 on 30 September 2026: the card drew Chinese in both the title weight and the body weight.
+
+1. Decode `res/gui/flash/fontconfig.xml` into plain XML. Keep the Scaleform `config` section, because the same file supplies it.
+2. In the `Warhelios` family, change the `normal` path to `gui/gameface/fonts/WarheliosZHCN-Medium.ttf` and the `bold` path to `gui/gameface/fonts/WarheliosZHCN-Bold.ttf`.
+3. Save the result as `res_mods/<client version>/gui/flash/fontconfig.xml`.
+4. Make the document set `lang` to `zh_cn`, and give it some Chinese text to draw.
+5. After the test, delete the override. It changes `Warhelios` across the whole client.
+
 Copy the values rather than linking the game's stylesheet: linking pins the mod to a resource path, and that file also sets `width` and `height` to `100%`, which fights the sizing a standalone panel needs. Re-check them after a client update — the word gap in "Text wraps by flex line" above is measured against PFDINMax at this letter spacing.
 
 **The game's `body` is rarely the whole inherited environment.** What a moved subtree inherited came from every ancestor it had, and the nearest one setting a property wins. A widget wrapping the subtree typically sets `color`, `font-size` and `line-height` of its own, so those come from the widget and only the untouched ones — family, weight, letter spacing — come from the game. Reproducing the game's `body` alone gets the second group right and silently restyles the first: in this repo it turned every unstyled line in a tooltip from a cool grey to the game's warm cream, which reads as correct until it is put beside the original.

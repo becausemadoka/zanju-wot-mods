@@ -1,6 +1,10 @@
 Changelog
 =========
 
+## 1.2.1 (30 September 2026)
+
+- Fixed missing letters in the banner tooltips, in languages that the game draws with a different font (e.g. Chinese).
+
 ## 1.2.0 (11 September 2026)
 
 - A campaign screen opened from a banner now has the game's own back button. It walks back the way the game does: to the campaign, then to the campaign map. Escape now takes the same path instead of closing straight to the garage.

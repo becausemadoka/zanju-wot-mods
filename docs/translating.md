@@ -30,7 +30,7 @@ You do not have to translate every key at once — untranslated keys simply show
 
 ## Refresh the coverage table
 
-Every mod README has a `## Translations` table with each language's coverage. After editing a `.yml`, regenerate it:
+Every mod README has a `## Translations` table with each language's coverage. The main README also has one table for all mods, in its `## Translations` section, which shows the mods that still lack your language. After editing a `.yml`, regenerate both:
 
 ```bash
 python3 -m tools.commands.lint i18n
@@ -38,7 +38,7 @@ python3 -m tools.commands.lint i18n
 
 This needs only Python 3 — no Docker, no Dev Container. (Inside the Dev Container the same command is `zwm lint i18n`.)
 
-Continuous integration runs `python3 -m tools.commands.lint i18n-check` and will fail the pull request if the table is out of date, so run the command and commit the updated README alongside your `.yml` changes.
+Continuous integration runs `python3 -m tools.commands.lint i18n-check` and will fail the pull request if a table is out of date, so run the command and commit the updated READMEs alongside your `.yml` changes.
 
 ## Submit your changes
 

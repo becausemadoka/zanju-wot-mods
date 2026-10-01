@@ -70,6 +70,8 @@ function render(model) {
         return;
     }
 
+    // Before the build, so that the first layout and the size measured from it use the right font.
+    applyLanguage(payload.lang);
     renderCard(card, payload.entry, payload.labels || {});
     applyHints(card, keys, payload.entry);
     // A new card is never painted where the last one stood. Python reveals it once it has
@@ -78,6 +80,17 @@ function render(model) {
     renderedToken = token;
     currentToken = token;
     scheduleMeasure(token);
+}
+
+// The client's own documents set `lang` on the root element when they start, and card.css reads
+// it to select the font. This document does not run that code, so Python sends the code instead.
+// With no `lang`, the card stays on PFDINMax, which draws nothing for Chinese, Japanese, Korean,
+// Thai or Vietnamese text.
+function applyLanguage(lang) {
+    const root = document.documentElement;
+    if (lang && root.getAttribute('lang') !== lang) {
+        root.setAttribute('lang', lang);
+    }
 }
 
 function setRevealed(card, revealed) {
